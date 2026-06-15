@@ -37,6 +37,7 @@ class Game:
         self.journalist = Journalist(self.ai)
         self.ui: TerminalUI | GraphicalUI = TerminalUI()  # default
         self.state = "menu"
+        self.no_ai = False  # set to True in graphical mode to skip AI calls
         self.event_cooldowns: dict[str, int] = {}
         self._setup_events()
 
@@ -84,23 +85,18 @@ class Game:
 
         print(f"\n{self.party.commander.name} takes command. The bugle sounds.")
 
-        if ui_mode == "terminal":
-            self._game_loop()
-        else:
-            # Graphical mode: after prologue, the main loop is driven by Pygame
-            return
-
     # ------------------------------------------------------------------
     # Graphical launcher
     # ------------------------------------------------------------------
     def run_graphical(self) -> None:
-        """Switch to graphical UI and start the Pygame loop."""
+        """Switch to graphical UI without re‑running prologue."""
         self.ui = GraphicalUI()
-        self.new_game(ui_mode="graphical")
+        self.no_ai = True  # disable blocking AI calls
+        print("\nLaunching graphical map...")
         self.ui.main_loop(self)
 
     # ------------------------------------------------------------------
-    # Main terminal loop (unchanged, still used for --terminal)
+    # Main terminal loop
     # ------------------------------------------------------------------
     def _game_loop(self) -> None:
         while self.state != "gameover":
@@ -146,7 +142,7 @@ class Game:
                 return
 
     # ------------------------------------------------------------------
-    # Action methods
+    # Action methods (unchanged)
     # ------------------------------------------------------------------
     def _march_normal(self) -> None:
         assert self.party is not None
@@ -242,7 +238,7 @@ class Game:
         )
 
     # ------------------------------------------------------------------
-    # Events
+    # Events (unchanged)
     # ------------------------------------------------------------------
     def _check_random_events(self) -> None:
         assert self.party is not None
@@ -282,7 +278,7 @@ class Game:
             print(f"📜 {result['narration']}")
 
     # ------------------------------------------------------------------
-    # Combat resolution
+    # Combat resolution (unchanged)
     # ------------------------------------------------------------------
     def _resolve_combat_event(self, event: GameEvent) -> Dict[str, Any]:
         assert self.party is not None
@@ -340,7 +336,7 @@ class Game:
         return log
 
     # ------------------------------------------------------------------
-    # Event definitions
+    # Event definitions (unchanged)
     # ------------------------------------------------------------------
     def _setup_events(self) -> None:
         wm = self.world_map
@@ -543,10 +539,18 @@ class Game:
         )
 
     # ------------------------------------------------------------------
-    # Endings
+    # Endings – handle both terminal (AI) and graphical (no AI)
     # ------------------------------------------------------------------
     def _victory(self) -> None:
         assert self.party is not None
+        if self.no_ai:
+            # Graphical mode: simple message
+            print("\n🎉 Your unit staggers into Yan'an. The Long March is over.")
+            print(f"Survivors: {self.party.total_people()}")
+            self.state = "gameover"
+            return
+
+        # Terminal mode: full AI journalist account
         print("\n🎉 Your unit staggers into Yan'an. The Long March is over.")
         print(f"Survivors: {self.party.total_people()}")
         print(
@@ -569,6 +573,14 @@ class Game:
 
     def _game_over(self) -> None:
         assert self.party is not None
+        if self.no_ai:
+            # Graphical mode: simple message
+            print("\n💀 Your unit has perished.")
+            print("The journalist closes his notebook.")
+            self.state = "gameover"
+            return
+
+        # Terminal mode: full AI journalist note
         print("\n💀 Your unit has perished. The journalist closes his notebook.")
         prompt = (
             "The Red Army unit has been destroyed. Write a short, mournful paragraph "
@@ -590,9 +602,11 @@ def main():
     cfg = Config()
     game = Game(cfg)
     if "--graphical" in sys.argv:
-        game.run_graphical()
+        game.new_game(ui_mode="terminal")  # prologue in terminal
+        game.run_graphical()  # then graphical UI
     else:
         game.new_game(ui_mode="terminal")
+        game._game_loop()
 
 
 if __name__ == "__main__":
