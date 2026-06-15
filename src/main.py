@@ -1,11 +1,14 @@
-"""Game entry point — historical‑realism terminal prototype."""
+"""Game entry point — historical‑realism prototype (terminal + graphical)."""
 
 import logging
 import random
-from typing import Optional
+import sys
+from typing import Any, Dict, Optional
 
+from .combat.combat import Battlefield, CombatSimulator, Squad
 from .core.character import Character, Commander
 from .core.config import Config
+from .core.enums import TerrainType
 from .core.party import Party
 from .core.time_manager import TimeManager
 from .core.world_map import WorldMap
@@ -13,6 +16,7 @@ from .narrative.ai_service import AIService
 from .narrative.event_system import EventManager, GameEvent, RandomEvent
 from .narrative.journalist import Journalist
 from .narrative.prologue import Prologue
+from .ui.graphical import GraphicalUI
 from .ui.terminal import TerminalUI
 
 logging.basicConfig(level=logging.INFO)
@@ -31,25 +35,28 @@ class Game:
         self.time_mgr = TimeManager()
         self.event_mgr = EventManager()
         self.journalist = Journalist(self.ai)
-        self.ui = TerminalUI()
+        self.ui: TerminalUI | GraphicalUI = TerminalUI()  # default
         self.state = "menu"
-        self.event_cooldowns: dict[
-            str, int
-        ] = {}  # event_id -> days until allowed again
+        self.event_cooldowns: dict[str, int] = {}
         self._setup_events()
 
+    # ------------------------------------------------------------------
+    # Prologue + new game
+    # ------------------------------------------------------------------
     def new_game(self, ui_mode: str = "terminal") -> None:
         """Run prologue, initialise party, start main loop."""
         print("\n" + "=" * 60)
         print("  LONG MARCH: RED STAR OVER CHINA")
         print("=" * 60)
-        # Prologue
+
+        # Prologue always uses current UI (terminal or graphical)
         prologue = Prologue(self.ai)
         self.commander = prologue.run(
             prompt_callback=lambda q, opts: (
                 self.ui.show_decision(q, opts) if opts else self.ui.prompt_string(q)
             )
         )
+
         # Build party
         soldiers = [
             Character(
@@ -72,36 +79,44 @@ class Game:
             "Commissar Zhou", "Political officer", {"health": 100, "loyalty": 95}
         )
         self.party = Party(self.commander, soldiers, porters, commissar)
-        self.party.supplies["rice_kg"] = (
-            80.0  # historical: ~15 days of food for 8 people
-        )
+        self.party.supplies["rice_kg"] = 80.0
         self.party.supplies["ammo"] = 40
 
         print(f"\n{self.party.commander.name} takes command. The bugle sounds.")
-        self._game_loop()
+
+        if ui_mode == "terminal":
+            self._game_loop()
+        else:
+            # Graphical mode: after prologue, the main loop is driven by Pygame
+            return
 
     # ------------------------------------------------------------------
-    # Main loop
+    # Graphical launcher
+    # ------------------------------------------------------------------
+    def run_graphical(self) -> None:
+        """Switch to graphical UI and start the Pygame loop."""
+        self.ui = GraphicalUI()
+        self.new_game(ui_mode="graphical")
+        self.ui.main_loop(self)
+
+    # ------------------------------------------------------------------
+    # Main terminal loop (unchanged, still used for --terminal)
     # ------------------------------------------------------------------
     def _game_loop(self) -> None:
         while self.state != "gameover":
             assert self.party is not None
             self._print_status()
 
-            # Check random events
             self._check_random_events()
 
-            # Check for node‑triggered major events
             active_events = self.event_mgr.get_active_events(self.party, self.time_mgr)
             if active_events:
                 self._handle_events(active_events)
 
-            # Victory condition
             if self.world_map.next_node() is None:
                 self._victory()
                 return
 
-            # Player action
             actions = [
                 "March (32 km, 1 day)",
                 "Force march (60 km, 1 day, fatigue)",
@@ -126,33 +141,27 @@ class Game:
                 print("The Long March awaits. 再见 comrade.")
                 self.state = "gameover"
 
-            # End‑of‑day check: starvation, morale collapse, all dead
             if self.party.total_people() == 0 or self.party.morale <= 0:
-                print(
-                    "\n💀 Your unit has perished. The journalist closes his notebook."
-                )
-                self.state = "gameover"
+                self._game_over()
+                return
 
     # ------------------------------------------------------------------
     # Action methods
     # ------------------------------------------------------------------
     def _march_normal(self) -> None:
-        """Standard march: 8 hours, 32 km, consumes full rations."""
         assert self.party is not None
         self.time_mgr.set_scale(1)
-        self.time_mgr.update(8 * 3600)  # 8 hours
-        km = self.config.BASE_SPEED_KMPH * 8  # 32 km
+        self.time_mgr.update(8 * 3600)
+        km = self.config.BASE_SPEED_KMPH * 8
         self._travel(km)
         self._consume_and_report()
 
     def _force_march(self) -> None:
-        """Forced march: 12 hours, 60 km, health & morale penalties."""
         assert self.party is not None
         self.time_mgr.set_scale(1)
         self.time_mgr.update(12 * 3600)
-        km = 5.0 * 12  # 60 km at 5 km/h (strenuous)
+        km = 5.0 * 12
         self._travel(km)
-        # Fatigue damage: each person loses 5 health
         for person in self.party.soldiers + self.party.porters + [self.party.commander]:
             if person.is_alive():
                 person.apply_damage(5, "forced march")
@@ -163,11 +172,9 @@ class Game:
         )
 
     def _rest(self) -> None:
-        """Rest one full day, consume half rations, gain morale."""
         assert self.party is not None
         self.time_mgr.set_scale(1)
         self.time_mgr.update(24 * 3600)
-        # Half rations
         people = self.party.total_people()
         rice_consumed = people * self.config.DAILY_RICE_KG_PER_PERSON * 0.5
         self.party.supplies["rice_kg"] = max(
@@ -177,11 +184,9 @@ class Game:
         print("You rest and rally the troops. Morale improves slightly.")
 
     def _forage(self) -> None:
-        """Spend a day foraging – chance of food, ammo, or nothing."""
         assert self.party is not None
         self.time_mgr.set_scale(1)
         self.time_mgr.update(24 * 3600)
-        # Still consume half rations (people eat while searching)
         people = self.party.total_people()
         rice_consumed = people * self.config.DAILY_RICE_KG_PER_PERSON * 0.5
         self.party.supplies["rice_kg"] = max(
@@ -205,7 +210,6 @@ class Game:
             self.party.update_morale(-2, "failed forage")
 
     def _travel(self, km: float) -> None:
-        """Advance party on map by given kilometres."""
         reached = self.world_map.advance(km)
         if reached:
             node = self.world_map.current_node()
@@ -213,7 +217,6 @@ class Game:
                 print(f"\n🏁 You have reached **{node.name}** – {node.description}")
 
     def _consume_and_report(self) -> None:
-        """Consume daily supplies and print warnings."""
         assert self.party is not None
         shortages = self.party.consume_daily()
         if shortages.get("rice_kg", 0) > 0:
@@ -223,7 +226,6 @@ class Game:
     # Status display
     # ------------------------------------------------------------------
     def _print_status(self) -> None:
-        """Print current party and location status."""
         assert self.party is not None
         node = self.world_map.current_node()
         node_name = node.name if node else "Unknown"
@@ -243,34 +245,31 @@ class Game:
     # Events
     # ------------------------------------------------------------------
     def _check_random_events(self) -> None:
-        """Roll for random events each day based on frequency and cooldown."""
         assert self.party is not None
-        now = self.time_mgr._datetime
         for event in self.event_mgr.events:
             if event.id in self.event_mgr.completed:
                 continue
             if not isinstance(event, RandomEvent):
                 continue
-            # Check cooldown
             last = self.event_cooldowns.get(event.id, -999)
             if last > 0:
-                # Reduce cooldown by 1 each day
                 self.event_cooldowns[event.id] = last - 1
                 continue
             if random.random() < event.frequency:
-                # Trigger event
                 print(
                     f"\n⚡ Random event: {event.data.get('description', 'Something happens.')}"
                 )
                 self._handle_events([event])
-                # Set cooldown (3 days before this event can fire again)
                 self.event_cooldowns[event.id] = 3
 
     def _handle_events(self, events) -> None:
-        """Resolve a list of active events with player choices."""
         assert self.party is not None
         for event in events:
             if event.id in self.event_mgr.completed:
+                continue
+            if event.data.get("combat"):
+                self._resolve_combat_event(event)
+                self.event_mgr.completed.add(event.id)
                 continue
             choices = event.data.get("choices", [])
             if not choices:
@@ -283,40 +282,96 @@ class Game:
             print(f"📜 {result['narration']}")
 
     # ------------------------------------------------------------------
+    # Combat resolution
+    # ------------------------------------------------------------------
+    def _resolve_combat_event(self, event: GameEvent) -> Dict[str, Any]:
+        assert self.party is not None
+        red_squads = [
+            Squad(
+                "Red Commander",
+                1,
+                {
+                    "attack": self.party.commander.traits.get("leadership", 10),
+                    "defense": 10,
+                },
+            ),
+        ]
+        for soldier in self.party.soldiers:
+            red_squads.append(Squad(soldier.name, 1, {"attack": 10, "defense": 10}))
+
+        enemy_data = event.data.get("enemy_squads", [])
+        enemy_squads = [
+            Squad(
+                d["name"], d["size"], {"attack": d["attack"], "defense": d["defense"]}
+            )
+            for d in enemy_data
+        ]
+
+        terrain = TerrainType.PLAINS
+        if event.data.get("terrain") == "river":
+            terrain = TerrainType.RIVER
+        elif event.data.get("terrain") == "forest":
+            terrain = TerrainType.FOREST
+        elif event.data.get("terrain") == "mountain":
+            terrain = TerrainType.MOUNTAINS
+
+        bf = Battlefield(3, 3, terrain)
+        bf.red_squads = red_squads
+        bf.enemy_squads = enemy_squads
+
+        self.ui.battle_setup(bf)
+        sim = CombatSimulator(bf)
+        log = sim.resolve()
+
+        total_red_cas = sum(s.casualties for s in bf.red_squads)
+        self.party.remove_casualties(total_red_cas, "soldiers")
+
+        if log["victory"]:
+            self.party.update_morale(10, "battle victory")
+        else:
+            self.party.update_morale(-15, "battle defeat")
+
+        self.party.supplies["ammo"] = max(0, self.party.supplies["ammo"] - 5)
+        report = self.ai.generate_combat_report(log)
+        print(f"\n⚔️  BATTLE REPORT: {report}")
+        print(f"   Red casualties: {log['red_casualties']}")
+        print(f"   Enemy casualties: {log['enemy_casualties']}")
+        print(f"   {'Victory!' if log['victory'] else 'Defeat...'}")
+        return log
+
+    # ------------------------------------------------------------------
     # Event definitions
     # ------------------------------------------------------------------
     def _setup_events(self) -> None:
-        """Register historical and random events."""
         wm = self.world_map
 
-        # Major: Xiang River ambush
         self.event_mgr.register(
             GameEvent(
                 "ambush_xiang",
                 lambda p, t: wm.current_node_id == "xiang_river",
                 {
                     "description": "Nationalist troops ambush your column at the Xiang River crossing!",
-                    "choices": [
+                    "combat": True,
+                    "terrain": "river",
+                    "enemy_squads": [
                         {
-                            "text": "Fight through! (costly)",
-                            "effects": {"morale": -10, "ammo": -10, "health": -30},
+                            "name": "Nationalist Regulars",
+                            "size": 8,
+                            "attack": 12,
+                            "defense": 12,
                         },
-                        {
-                            "text": "Retreat and find another ford.",
-                            "effects": {"morale": -5, "rice_kg": -5, "pamphlets": -2},
-                        },
+                        {"name": "Local Militia", "size": 5, "attack": 8, "defense": 6},
                     ],
                 },
             )
         )
 
-        # Major: Zunyi Conference (Soviet vote simulation)
         self.event_mgr.register(
             GameEvent(
                 "zunyi_conference",
                 lambda p, t: wm.current_node_id == "zunyi",
                 {
-                    "description": "The Zunyi Conference convenes. The Party debates strategy. Your voice matters.",
+                    "description": "The Zunyi Conference convenes. The Party debates strategy.",
                     "choices": [
                         {
                             "text": "Support Mao's bold northern thrust.",
@@ -335,7 +390,73 @@ class Game:
             )
         )
 
-        # Random: peasant gift
+        self.event_mgr.register(
+            GameEvent(
+                "jiajin_mountains",
+                lambda p, t: wm.current_node_id == "jiajin_mountains",
+                {
+                    "description": "The Jiajin Mountains rise ahead, covered in snow.",
+                    "choices": [
+                        {
+                            "text": "Press on immediately.",
+                            "effects": {"morale": -10, "health": -20},
+                        },
+                        {
+                            "text": "Wait a day and collect cold‑weather gear.",
+                            "effects": {"rice_kg": -5, "health": -5, "morale": 5},
+                        },
+                    ],
+                },
+            )
+        )
+
+        self.event_mgr.register(
+            GameEvent(
+                "maogong_meeting",
+                lambda p, t: wm.current_node_id == "maogong",
+                {
+                    "description": "At Maogong, you rendezvous with the Fourth Red Army.",
+                    "choices": [
+                        {
+                            "text": "Merge forces and share supplies.",
+                            "effects": {"rice_kg": 20, "morale": 15, "pamphlets": -5},
+                        },
+                        {
+                            "text": "Stay independent, request only ammunition.",
+                            "effects": {"ammo": 10, "political_cohesion": 5},
+                        },
+                    ],
+                },
+            )
+        )
+
+        self.event_mgr.register(
+            GameEvent(
+                "luding_bridge",
+                lambda p, t: wm.current_node_id == "luding_bridge",
+                {
+                    "description": "The Luding Bridge – a chain bridge over a raging river.",
+                    "combat": True,
+                    "terrain": "mountain",
+                    "enemy_squads": [
+                        {
+                            "name": "Nationalist Bridge Guard",
+                            "size": 6,
+                            "attack": 14,
+                            "defense": 10,
+                        },
+                        {
+                            "name": "Machine‑gun nest",
+                            "size": 4,
+                            "attack": 16,
+                            "defense": 8,
+                        },
+                    ],
+                },
+            )
+        )
+
+        # Random events
         self.event_mgr.register(
             RandomEvent(
                 "peasant_gift",
@@ -361,13 +482,12 @@ class Game:
             )
         )
 
-        # Random: storm
         self.event_mgr.register(
             RandomEvent(
                 "storm",
                 lambda p, t: True,
                 {
-                    "description": "A violent rainstorm turns the path to mud. Progress slows.",
+                    "description": "A violent rainstorm turns the path to mud.",
                     "choices": [
                         {
                             "text": "Push through.",
@@ -383,7 +503,6 @@ class Game:
             )
         )
 
-        # Random: deserter
         self.event_mgr.register(
             RandomEvent(
                 "deserter",
@@ -402,25 +521,78 @@ class Game:
             )
         )
 
+        self.event_mgr.register(
+            RandomEvent(
+                "local_guide",
+                lambda p, t: True,
+                {
+                    "description": "A local offers to guide you through a hidden pass.",
+                    "choices": [
+                        {
+                            "text": "Follow the guide.",
+                            "effects": {"morale": 3, "rice_kg": -2},
+                        },
+                        {
+                            "text": "Go alone, you know the way.",
+                            "effects": {"morale": -2},
+                        },
+                    ],
+                },
+                frequency=0.12,
+            )
+        )
+
     # ------------------------------------------------------------------
-    # Victory
+    # Endings
     # ------------------------------------------------------------------
     def _victory(self) -> None:
-        """Handle reaching Yan'an."""
         assert self.party is not None
         print("\n🎉 Your unit staggers into Yan'an. The Long March is over.")
         print(f"Survivors: {self.party.total_people()}")
         print(
             f"Morale: {self.party.morale}  |  Political cohesion: {self.party.political_cohesion}"
         )
+
+        prompt = (
+            f"The Long March has ended. Survivors: {self.party.total_people()}. "
+            f"Morale: {self.party.morale}. Political cohesion: {self.party.political_cohesion}. "
+            "Write a single paragraph in the voice of a Western journalist, summarising the journey "
+            "and its significance, in the style of Edgar Snow's Red Star Over China."
+        )
+        account = self.ai.generate(
+            system_prompt=self.ai._system_prompt("narration"),
+            user_prompt=prompt,
+            max_tokens=256,
+        )
+        print(f"\n📰 JOURNALIST'S ACCOUNT:\n{account}")
+        self.state = "gameover"
+
+    def _game_over(self) -> None:
+        assert self.party is not None
+        print("\n💀 Your unit has perished. The journalist closes his notebook.")
+        prompt = (
+            "The Red Army unit has been destroyed. Write a short, mournful paragraph "
+            "from the journalist's perspective, reflecting on the sacrifice."
+        )
+        account = self.ai.generate(
+            system_prompt=self.ai._system_prompt("narration"),
+            user_prompt=prompt,
+            max_tokens=192,
+        )
+        print(f"\n📰 JOURNALIST'S NOTE:\n{account}")
         self.state = "gameover"
 
 
+# ---------------------------------------------------------------------------
 # Entry point
+# ---------------------------------------------------------------------------
 def main():
     cfg = Config()
     game = Game(cfg)
-    game.new_game(ui_mode="terminal")
+    if "--graphical" in sys.argv:
+        game.run_graphical()
+    else:
+        game.new_game(ui_mode="terminal")
 
 
 if __name__ == "__main__":

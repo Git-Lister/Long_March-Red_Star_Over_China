@@ -1,0 +1,28 @@
+INFO:httpx:HTTP Request: GET http://localhost:11434/api/tags "HTTP/1.1 200 OK"
+INFO:src.narrative.ai_service:Ollama connected, model 'llama3:8b-instruct-q4_K_M' ready.
+Your choice: Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\main.py", line 599, in <module>
+    main()
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\main.py", line 593, in main
+    game.run_graphical()
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\main.py", line 99, in run_graphical
+    self.new_game(ui_mode="graphical")
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\main.py", line 54, in new_game
+    self.commander = prologue.run(
+                     ^^^^^^^^^^^^^
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\narrative\prologue.py", line 27, in run
+    last_night = self._ask(
+                 ^^^^^^^^^^
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\narrative\prologue.py", line 81, in _ask
+    idx = callback(question, labels)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\main.py", line 56, in <lambda>
+    self.ui.show_decision(q, opts) if opts else self.ui.prompt_string(q)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\VSCode-Projects\Long_March-Red_Star_Over_China\src\ui\graphical.py", line 61, in show_decision
+    return int(input("Your choice: ")) - 1
+               ^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+^C

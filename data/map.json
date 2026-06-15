@@ -1,45 +1,12 @@
 {
   "nodes": [
-    {
-      "id": "ruijin",
-      "name": "Ruijin",
-      "lat": 25.9,
-      "lon": 116.0,
-      "type": "city",
-      "description": "The Soviet capital. The march begins."
-    },
-    {
-      "id": "xiang_river",
-      "name": "Xiang River",
-      "lat": 27.2,
-      "lon": 112.0,
-      "type": "river_crossing",
-      "description": "The blood‑soaked crossing."
-    },
-    {
-      "id": "zunyi",
-      "name": "Zunyi",
-      "lat": 27.7,
-      "lon": 106.9,
-      "type": "city",
-      "description": "The conference that changed everything."
-    },
-    {
-      "id": "luding_bridge",
-      "name": "Luding Bridge",
-      "lat": 29.9,
-      "lon": 102.2,
-      "type": "bridge",
-      "description": "The iron‑chain bridge. Victory or death."
-    },
-    {
-      "id": "yanan",
-      "name": "Yan'an",
-      "lat": 36.6,
-      "lon": 109.5,
-      "type": "city",
-      "description": "The final refuge. You have arrived."
-    }
+    {"id": "ruijin", "name": "Ruijin", "lat": 25.9, "lon": 116.0, "type": "city", "description": "The Soviet capital. The march begins."},
+    {"id": "xiang_river", "name": "Xiang River", "lat": 27.2, "lon": 112.0, "type": "river_crossing", "description": "The blood‑soaked crossing."},
+    {"id": "zunyi", "name": "Zunyi", "lat": 27.7, "lon": 106.9, "type": "city", "description": "The conference that changed everything."},
+    {"id": "jiajin_mountains", "name": "Jiajin Mountains", "lat": 29.5, "lon": 103.0, "type": "mountain_pass", "description": "Snow, ice, and thin air. Many will not wake."},
+    {"id": "maogong", "name": "Maogong", "lat": 30.5, "lon": 102.8, "type": "village", "description": "Where the Red Armies meet."},
+    {"id": "luding_bridge", "name": "Luding Bridge", "lat": 29.9, "lon": 102.2, "type": "bridge", "description": "The iron‑chain bridge. Victory or death."},
+    {"id": "yanan", "name": "Yan'an", "lat": 36.6, "lon": 109.5, "type": "city", "description": "The final refuge. You have arrived."}
   ],
-  "route": ["ruijin", "xiang_river", "zunyi", "luding_bridge", "yanan"]
+  "route": ["ruijin", "xiang_river", "zunyi", "jiajin_mountains", "maogong", "luding_bridge", "yanan"]
 }

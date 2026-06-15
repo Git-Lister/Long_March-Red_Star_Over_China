@@ -1,4 +1,6 @@
 """Game configuration constants."""
+
+
 class Config:
     DATA_PATH: str = "data/"
     SAVE_PATH: str = "saves/"
@@ -13,9 +15,13 @@ class Config:
     BASE_SPEED_KMPH: float = 4.0
     DAILY_RICE_KG_PER_PERSON: float = 0.6
 
-    LLM_MODEL_PATH: str = "models/llama-3-8b-q4.gguf"
+    # AI Settings
+    AI_BACKEND: str = "ollama"  # "ollama" or "llama_cpp" (future)
+    OLLAMA_MODEL: str = (
+        "llama3:8b-instruct-q4_K_M"  # exactly as listed in `ollama list`
+    )
+    OLLAMA_HOST: str = "http://localhost:11434"
     USE_AI: bool = True
     AI_MAX_TOKENS: int = 256
 
     COMBAT_DICE_SIDES: int = 20
-

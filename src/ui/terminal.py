@@ -3,6 +3,7 @@
 from typing import Any, Dict, List
 
 from ..combat.combat import Battlefield
+from ..core.enums import UnitStance
 from ..core.party import Party
 from ..core.world_map import WorldMap
 from .base import BaseUI
@@ -50,6 +51,11 @@ class TerminalUI(BaseUI):
                 print(f"   Next stop: {next_node.name}")
 
     def battle_setup(self, battlefield: Battlefield) -> Dict[str, Any]:
-        """Stub for tactical battle; returns empty deployment."""
-        print("\n⚔️  BATTLE STATIONS! (Tactical combat not yet implemented)")
+        """Simple terminal deployment: ask for stance for each squad."""
+        print("\n⚔️  DEPLOYMENT")
+        for squad in battlefield.red_squads:
+            print(f"  {squad.name} ({squad.size} men)")
+            stances = [s.name for s in UnitStance]
+            idx = self.show_decision(f"Choose stance for {squad.name}:", stances)
+            squad.stance = list(UnitStance)[idx]
         return {}
